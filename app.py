@@ -49,42 +49,57 @@ with tab1:
     st.subheader("1. Upload Photo of Your Waste")
     st.write("Take or upload a photo of your sorted waste. AI will estimate type and weight.")
     
-    uploaded_file = st.file_uploader(
-        "Choose an image (JPG/PNG)",
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=False
-    )
-    
-    if uploaded_file is not None:
-        st.image(uploaded_file, caption="Your waste photo", width=300)
+    with st.form(key="waste_upload_form"):
+        uploaded_file = st.file_uploader(
+            "Choose an image (JPG/PNG)",
+            type=["jpg", "jpeg", "png"],
+            accept_multiple_files=False
+        )
         
-        if st.button("🔍 Analyze with AI"):
+        analyze_clicked = st.form_submit_button("🔍 Analyze with AI")
+        
+        if analyze_clicked and uploaded_file is not None:
+            # Simulasi AI
             waste_type, weight = ai_estimate_waste_from_image(uploaded_file)
             tokens = int(weight * TOKEN_RATE[waste_type])
             
-            st.success(f"✅ AI Result: **{waste_type.title()}** | **{weight} kg**")
-            st.info(f"💡 Estimated Reward: **{tokens} GreenCoin** after pickup")
-            
-            if st.button("✅ Confirm & Record on Blockchain", key="confirm_waste"):
-                req_id = f"REQ-{int(time.time())}"
-                request = {
-                    "req_id": req_id,
-                    "waste_type": waste_type,
-                    "weight_kg": weight,
-                    "tokens_earned": tokens,
-                    "status": "Pending",
-                    "timestamp": datetime.now()
-                }
-                st.session_state.blockchain.requests.append(request)
-                st.session_state.blockchain.add_block({
-                    "type": "waste_registered",
-                    "req_id": req_id,
-                    "waste_type": waste_type,
-                    "weight_kg": weight,
-                    "user": "user_001"
-                })
-                st.balloons()
-                st.success("Waste registered on blockchain! 🌍")
+            st.session_state.last_analysis = {
+                "waste_type": waste_type,
+                "weight_kg": weight,
+                "tokens_earned": tokens,
+                "image": uploaded_file
+            }
+            st.rerun()  # Refresh UI untuk tampilkan hasil
+    
+    # Tampilkan hasil analisis & tombol konfirmasi (di luar form)
+    if "last_analysis" in st.session_state:
+        analysis = st.session_state.last_analysis
+        st.image(analysis["image"], width=300, caption="Uploaded waste photo")
+        st.success(f"✅ AI Result: **{analysis['waste_type'].title()}** | **{analysis['weight_kg']} kg**")
+        st.info(f"💡 Estimated Reward: **{analysis['tokens_earned']} GreenCoin** after pickup")
+        
+        if st.button("✅ Confirm & Record on Blockchain"):
+            # Buat request
+            req_id = f"REQ-{int(time.time())}"
+            request = {
+                "req_id": req_id,
+                "waste_type": analysis["waste_type"],
+                "weight_kg": analysis["weight_kg"],
+                "tokens_earned": analysis["tokens_earned"],
+                "status": "Pending",
+                "timestamp": datetime.now().isoformat()
+            }
+            st.session_state.blockchain.requests.append(request)
+            st.session_state.blockchain.add_block({
+                "type": "waste_registered",
+                "req_id": req_id,
+                "waste_type": analysis["waste_type"],
+                "weight_kg": analysis["weight_kg"],
+                "user": "user_001"
+            })
+            # Hapus analisis sementara
+            del st.session_state.last_analysis
+            st.rerun()  # Refresh UI → langsung muncul di tab Pickup
 
 # Tab 2: Pickup Requests
 with tab2:
