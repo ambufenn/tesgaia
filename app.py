@@ -111,20 +111,55 @@ with tab2:
         for i, req in enumerate(requests):
             if req["status"] == "Pending":
                 with st.expander(f"📦 {req['req_id']} – {req['waste_type'].title()} ({req['weight_kg']} kg)"):
-                    st.write(f"**Reward**: {req['tokens_earned']} GreenCoin")
-                    if st.button("📞 Request Pickup", key=f"pickup_{i}"):
+                    # Simulasi lokasi: ambil dari session atau random
+                    if "user_location" not in st.session_state:
+                        st.session_state.user_location = "-6.2088, 106.8456"  # Jakarta
+                    
+                    st.write(f"📍 **Your Location**: {st.session_state.user_location}")
+                    
+                    # Pilih preferensi
+                    pref = st.radio(
+                        "What's your priority?",
+                        ("⚡ Fast pickup", "💰 Low cost"),
+                        key=f"pref_{i}",
+                        horizontal=True
+                    )
+                    preference = "fast" if "Fast" in pref else "cheap"
+                    
+                    # Rekomendasi AI
+                    recommended = recommend_vendors(req["weight_kg"], preference=preference)
+                    top = recommended[0]
+                    
+                    # Tampilkan rekomendasi
+                    st.markdown(f"### 🤖 AI Recommendation: **{top['name']}**")
+                    st.write(f"- **Price**: Rp {top['total_price']:,.0f}")
+                    st.write(f"- **ETA**: {top['eta_min']} minutes")
+                    st.write(f"- **Rating**: {top['rating']}/5")
+                    
+                    # Penjelasan ILLM
+                    if preference == "fast":
+                        st.info("💡 *Recommended because it offers the fastest pickup in your area.*")
+                    else:
+                        st.info("💡 *Recommended because it offers the lowest price for your waste volume.*")
+                    
+                    # Tombol pilih vendor
+                    if st.button(f"📞 Choose {top['name']}", key=f"choose_{i}"):
                         req["status"] = "Assigned"
+                        req["assigned_vendor"] = top["name"]
+                        req["pickup_price"] = top["total_price"]
                         st.session_state.blockchain.add_block({
                             "type": "pickup_assigned",
                             "req_id": req["req_id"],
-                            "vendor": "vendor_eco1",
-                            "fee_eth": 0.001
+                            "vendor": top["name"],
+                            "price": top["total_price"]
                         })
-                        st.session_state.wallet.eth -= 0.001
-                        st.success("Vendor assigned! Pickup will arrive soon.")
-            
+                        st.success(f"✅ {top['name']} will pick up your waste soon!")
+                        st.rerun()
+
             elif req["status"] == "Assigned":
-                st.warning(f"🚛 Pickup in progress for {req['req_id']}")
+                vendor = req.get("assigned_vendor", "Unknown")
+                price = req.get("pickup_price", 0)
+                st.success(f"🚛 **{vendor}** assigned! Price: Rp {price:,.0f}")
                 if st.button("✅ Mark as Completed", key=f"complete_{i}"):
                     req["status"] = "Completed"
                     st.session_state.wallet.green_coin += req["tokens_earned"]
