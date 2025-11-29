@@ -2,174 +2,129 @@
 import streamlit as st
 import sys
 import os
-from datetime import datetime
 import time
+from datetime import datetime
 
-# Tambahkan src ke path agar bisa import
+# Tambahkan src ke path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
+# Impor modul
 from src.models.ai_engine import ai_estimate_waste_from_image
-from src.core.blockchain import Blockchain, Wallet
 from src.config import TOKEN_RATE
+from src.core.blockchain import Blockchain, Wallet
 
-# Initialize session state
+# Inisialisasi session state
 if "initialized" not in st.session_state:
     st.session_state.blockchain = Blockchain()
     st.session_state.wallet = Wallet()
+    st.session_state.user_location = "-6.2088, 106.8456"  # Jakarta
     st.session_state.show_ledger = False
+    st.session_state.last_analysis = None
     st.session_state.initialized = True
 
 # ====== CONFIG ======
 st.set_page_config(page_title="SortSmart – Blockchain Waste Ecosystem", layout="wide", page_icon="♻️")
 
-# ====== UI ======
-st.title("♻️ SortSmart – Blockchain Waste Ecosystem")
-st.caption("Foto sampah → AI estimasi → Pickup → Dapat GreenCoin (on-chain)")
-
-# Sidebar: Wallet & Ledger
+# ====== SIDEBAR ======
 with st.sidebar:
     st.header("👛 My Wallet")
-    wallet = st.session_state.wallet
-    st.metric("GreenCoin", wallet.green_coin)
-    st.metric("ETH (Gas)", f"{wallet.eth:.4f}")
+    st.metric("GreenCoin", st.session_state.wallet.green_coin)
+    st.metric("ETH (Gas)", f"{st.session_state.wallet.eth:.4f}")
     
     st.divider()
     st.subheader("⛓️ Last 3 Blocks")
     for block in st.session_state.blockchain.get_last_blocks():
         st.caption(f"Block #{block['index']} · {block['data'].get('type', 'tx')}")
     
-    if st.button("View Full Ledger", key="ledger_btn"):
+    if st.button("View Full Ledger"):
         st.session_state.show_ledger = True
 
-# Main Tabs
-tab1, tab2, tab3 = st.tabs(["📸 Upload Waste Photo", "🚛 Pickup Requests", "📊 My Rewards"])
+# ====== MAIN ======
+st.title("♻️ SortSmart – Blockchain Waste Ecosystem")
+st.caption("Upload photo → AI estimates → Choose vendor → Get GreenCoin")
 
-# Tab 1: Upload Photo
+tab1, tab2, tab3 = st.tabs(["📸 Upload Waste", "🚛 Pickup Requests", "📊 My Rewards"])
+
+# Tab 1: Upload
 with tab1:
     st.subheader("1. Upload Photo of Your Waste")
-    st.write("Take or upload a photo of your sorted waste. AI will estimate type and weight.")
-    
-    with st.form(key="waste_upload_form"):
-        uploaded_file = st.file_uploader(
-            "Choose an image (JPG/PNG)",
-            type=["jpg", "jpeg", "png"],
-            accept_multiple_files=False
-        )
+    with st.form("upload_form"):
+        uploaded_file = st.file_uploader("Choose an image (JPG/PNG)", type=["jpg", "jpeg", "png"])
+        submitted = st.form_submit_button("🔍 Analyze with AI")
         
-        analyze_clicked = st.form_submit_button("🔍 Analyze with AI")
-        
-        if analyze_clicked and uploaded_file is not None:
-            # Simulasi AI
+        if submitted and uploaded_file:
             waste_type, weight = ai_estimate_waste_from_image(uploaded_file)
-            tokens = int(weight * TOKEN_RATE[waste_type])
-            
+            tokens = int(weight * TOKEN_RATE.get(waste_type, 5))
             st.session_state.last_analysis = {
                 "waste_type": waste_type,
                 "weight_kg": weight,
                 "tokens_earned": tokens,
                 "image": uploaded_file
             }
-            st.rerun()  # Refresh UI untuk tampilkan hasil
-    
-    # Tampilkan hasil analisis & tombol konfirmasi (di luar form)
-    if "last_analysis" in st.session_state:
-        analysis = st.session_state.last_analysis
-        st.image(analysis["image"], width=300, caption="Uploaded waste photo")
-        st.success(f"✅ AI Result: **{analysis['waste_type'].title()}** | **{analysis['weight_kg']} kg**")
-        st.info(f"💡 Estimated Reward: **{analysis['tokens_earned']} GreenCoin** after pickup")
+            st.rerun()
+
+    if st.session_state.last_analysis:
+        a = st.session_state.last_analysis
+        st.image(a["image"], width=300)
+        st.success(f"✅ **{a['waste_type'].title()}** | **{a['weight_kg']} kg**")
+        st.info(f"💡 Reward: **{a['tokens_earned']} GreenCoin** after pickup")
         
         if st.button("✅ Confirm & Record on Blockchain"):
-            # Buat request
             req_id = f"REQ-{int(time.time())}"
             request = {
                 "req_id": req_id,
-                "waste_type": analysis["waste_type"],
-                "weight_kg": analysis["weight_kg"],
-                "tokens_earned": analysis["tokens_earned"],
-                "status": "Pending",
-                "timestamp": datetime.now().isoformat()
+                "waste_type": a["waste_type"],
+                "weight_kg": a["weight_kg"],
+                "tokens_earned": a["tokens_earned"],
+                "status": "Pending"
             }
             st.session_state.blockchain.requests.append(request)
             st.session_state.blockchain.add_block({
                 "type": "waste_registered",
                 "req_id": req_id,
-                "waste_type": analysis["waste_type"],
-                "weight_kg": analysis["weight_kg"],
-                "user": "user_001"
+                "waste_type": a["waste_type"],
+                "weight_kg": a["weight_kg"]
             })
-            # Hapus analisis sementara
-            del st.session_state.last_analysis
-            st.rerun()  # Refresh UI → langsung muncul di tab Pickup
+            st.session_state.last_analysis = None
+            st.rerun()
 
-# Tab 2: Pickup Requests
+# Tab 2: Pickup (sederhana dulu – fokus ke alur utama)
 with tab2:
     st.subheader("2. Pickup Requests")
-    requests = st.session_state.blockchain.requests
-    if not requests:
-        st.info("No waste registered yet. Go to 'Upload Waste Photo' to start.")
+    if not st.session_state.blockchain.requests:
+        st.info("No requests yet. Upload waste first!")
     else:
-        for i, req in enumerate(requests):
-            if req["status"] == "Pending":
-                with st.expander(f"📦 {req['req_id']} – {req['waste_type'].title()} ({req['weight_kg']} kg)"):
-                    # Simulasi lokasi: ambil dari session atau random
-                    if "user_location" not in st.session_state:
-                        st.session_state.user_location = "-6.2088, 106.8456"  # Jakarta
-                    
-                    st.write(f"📍 **Your Location**: {st.session_state.user_location}")
-                    
-                    # Pilih preferensi
-                    pref = st.radio(
-                        "What's your priority?",
-                        ("⚡ Fast pickup", "💰 Low cost"),
-                        key=f"pref_{i}",
-                        horizontal=True
-                    )
-                    preference = "fast" if "Fast" in pref else "cheap"
-                    
-                    # Rekomendasi AI
-                    recommended = recommend_vendors(req["weight_kg"], preference=preference)
-                    top = recommended[0]
-                    
-                    # Tampilkan rekomendasi
-                    st.markdown(f"### 🤖 AI Recommendation: **{top['name']}**")
-                    st.write(f"- **Price**: Rp {top['total_price']:,.0f}")
-                    st.write(f"- **ETA**: {top['eta_min']} minutes")
-                    st.write(f"- **Rating**: {top['rating']}/5")
-                    
-                    # Penjelasan ILLM
-                    if preference == "fast":
-                        st.info("💡 *Recommended because it offers the fastest pickup in your area.*")
-                    else:
-                        st.info("💡 *Recommended because it offers the lowest price for your waste volume.*")
-                    
-                    # Tombol pilih vendor
-                    if st.button(f"📞 Choose {top['name']}", key=f"choose_{i}"):
+        for i, req in enumerate(st.session_state.blockchain.requests):
+            status_badge = {
+                "Pending": "🟡",
+                "Assigned": "🔵",
+                "Completed": "✅"
+            }.get(req["status"], "❓")
+            
+            with st.expander(f"{status_badge} {req['req_id']} – {req['waste_type'].title()} ({req['weight_kg']} kg)"):
+                st.write(f"**Reward**: {req['tokens_earned']} GreenCoin")
+                st.write(f"**Location**: {st.session_state.user_location}")
+                
+                if req["status"] == "Pending":
+                    if st.button("📞 Request Pickup", key=f"pickup_{i}"):
                         req["status"] = "Assigned"
-                        req["assigned_vendor"] = top["name"]
-                        req["pickup_price"] = top["total_price"]
                         st.session_state.blockchain.add_block({
                             "type": "pickup_assigned",
                             "req_id": req["req_id"],
-                            "vendor": top["name"],
-                            "price": top["total_price"]
+                            "vendor": "vendor_eco1"
                         })
-                        st.success(f"✅ {top['name']} will pick up your waste soon!")
                         st.rerun()
-
-            elif req["status"] == "Assigned":
-                vendor = req.get("assigned_vendor", "Unknown")
-                price = req.get("pickup_price", 0)
-                st.success(f"🚛 **{vendor}** assigned! Price: Rp {price:,.0f}")
-                if st.button("✅ Mark as Completed", key=f"complete_{i}"):
-                    req["status"] = "Completed"
-                    st.session_state.wallet.green_coin += req["tokens_earned"]
-                    st.session_state.blockchain.add_block({
-                        "type": "pickup_completed",
-                        "req_id": req["req_id"],
-                        "tokens_awarded": req["tokens_earned"]
-                    })
-                    st.balloons()
-                    st.success(f"🎉 You earned {req['tokens_earned']} GreenCoin!")
+                
+                elif req["status"] == "Assigned":
+                    if st.button("✅ Mark as Completed", key=f"complete_{i}"):
+                        req["status"] = "Completed"
+                        st.session_state.wallet.green_coin += req["tokens_earned"]
+                        st.session_state.blockchain.add_block({
+                            "type": "pickup_completed",
+                            "req_id": req["req_id"],
+                            "tokens_awarded": req["tokens_earned"]
+                        })
+                        st.balloons()
 
 # Tab 3: Rewards
 with tab3:
@@ -178,7 +133,7 @@ with tab3:
     if completed:
         st.dataframe(completed, use_container_width=True)
     else:
-        st.info("Complete your first pickup to earn GreenCoin!")
+        st.info("Complete a pickup to earn GreenCoin!")
     
     if st.session_state.show_ledger:
         st.divider()
@@ -187,4 +142,4 @@ with tab3:
             st.json(block)
 
 st.divider()
-st.caption("SortSmart v2.0 – Blockchain-Powered Circular Economy | All transactions are immutable")
+st.caption("SortSmart v2.2 – Modular GAIA Lab Project | AI + Blockchain for Waste Economy")
