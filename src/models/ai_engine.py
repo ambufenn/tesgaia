@@ -1,46 +1,25 @@
 # src/models/ai_engine.py
+import os
 import random
-from ..config import WASTE_TYPES
+import pandas as pd
+from ..config import TOKEN_RATE
 
-def ai_estimate_waste_from_image(uploaded_file) -> tuple[str, float]:
-    """
-    Simulasi AI Vision: dari file gambar (diupload), estimasi jenis & berat.
-    Dalam produksi: ganti dengan model image classifier (misal: Vertex AI).
-    """
-    # Pilih acak tapi realistis
+# 🔥 Perbaiki path ke data/waste_samples.csv (di ROOT, bukan di src/data)
+DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "waste_samples.csv")
+
+# Load dataset dengan aman
+try:
+    waste_df = pd.read_csv(DATA_PATH)
+    WASTE_TYPES = waste_df["waste_type"].tolist()
+    AVG_WEIGHTS = dict(zip(waste_df["waste_type"], waste_df["avg_weight_kg"]))
+except Exception as e:
+    # Fallback jika file tidak ditemukan (misal di Streamlit Cloud)
+    WASTE_TYPES = list(TOKEN_RATE.keys())
+    AVG_WEIGHTS = {k: 2.5 for k in WASTE_TYPES}
+
+def ai_estimate_waste_from_image(uploaded_file):
     waste_type = random.choice(WASTE_TYPES)
-    weight = round(random.uniform(0.5, 8.0), 1)
+    base_weight = AVG_WEIGHTS.get(waste_type, 2.5)
+    weight = round(base_weight + random.uniform(-0.8, 1.2), 1)
+    weight = max(0.3, min(10.0, weight))
     return waste_type, weight
-
-
-# src/models/ai_engine.py (tambahkan di akhir)
-from ..data.vendors import vendors_data
-
-def recommend_vendors(waste_weight_kg, preference="balanced"):
-    """
-    Rekomendasikan vendor berdasarkan preferensi:
-    - 'fast': minimalkan ETA
-    - 'cheap': minimalkan harga
-    - 'balanced': campuran
-    """
-    vendors = []
-    for v in vendors_data:
-        total_price = v["price_per_kg"] * waste_weight_kg
-        score = 0
-        if preference == "fast":
-            score = -v["eta_min"]  # lebih kecil = lebih baik
-        elif preference == "cheap":
-            score = -total_price
-        else:  # balanced
-            # Normalisasi & gabungkan
-            norm_eta = 1 - (v["eta_min"] / 60)
-            norm_price = 1 - (total_price / 50000)
-            score = 0.6 * norm_price + 0.4 * norm_eta
-        
-        vendors.append({
-            **v,
-            "total_price": total_price,
-            "score": score
-        })
-    
-    return sorted(vendors, key=lambda x: x["score"], reverse=True)
