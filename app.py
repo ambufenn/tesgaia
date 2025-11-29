@@ -126,33 +126,20 @@ with tab2:
                         })
                         st.balloons()
 
-# Tab 3: Rewards & Ledger
+# Tab 3: Rewards
 with tab3:
     st.subheader("3. My GreenCoin Rewards")
-    st.write("All rewards are recorded on-chain and non-transferable (eco-token).")
-    
-    # Tampilkan hanya request yang Completed
     completed = [r for r in st.session_state.blockchain.requests if r["status"] == "Completed"]
     if completed:
-        # Siapkan DataFrame untuk tampilan rapi
-        df_display = []
-        for r in completed:
-            df_display.append({
-                "Request ID": r["req_id"],
-                "Waste Type": r["waste_type"].title(),
-                "Weight (kg)": r["weight_kg"],
-                "GreenCoin Earned": r["tokens_earned"]
-            })
-        st.dataframe(df_display, use_container_width=True)
+        st.dataframe(completed, use_container_width=True)
     else:
-        st.info("Complete your first pickup to earn GreenCoin!")
+        st.info("Complete a pickup to earn GreenCoin!")
     
-    # Tampilkan Full Ledger jika diaktifkan
     if st.session_state.show_ledger:
         st.divider()
-        st.subheader("⛓️ Full Blockchain Ledger")
-        st.caption("Immutable record of all transactions")
-        # Tampilkan sebagai satu JSON array yang valid
-        st.json(st.session_state.blockchain.chain)
+        st.subheader("Full Blockchain Ledger")
+        for block in st.session_state.blockchain.chain:
+            st.json(block)
+
 st.divider()
 st.caption("SortSmart v2.2 – Modular GAIA Lab Project | AI + Blockchain for Waste Economy")
